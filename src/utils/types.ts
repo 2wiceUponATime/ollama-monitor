@@ -1,8 +1,18 @@
+export type ChatRequest = {
+    model: string;
+    messages: ChatMessage[];
+    options?: Record<string, unknown>;
+    think?: boolean;
+    [key: string]: unknown;
+};
+
+export type Status = 'thinking' | 'responding' | 'done';
+
 export type ChatChunk = {
     model: string;
     created_at: string;
     message: ChatMessage;
-} & {
+} & ({
     done: false;
 } | {
     done_reason: string;
@@ -13,7 +23,7 @@ export type ChatChunk = {
     prompt_eval_duration: number;
     eval_count: number;
     eval_duration: number;
-}
+});
 
 export type ToolCall = {
     id?: string;
@@ -29,4 +39,9 @@ export type ChatMessage = {
     content: string;
     thinking?: string;
     tool_calls?: ToolCall[];
+}
+
+export type MonitorChunk = ChatChunk & {
+    status: Status;
+    request?: ChatRequest;
 }

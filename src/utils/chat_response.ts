@@ -1,14 +1,18 @@
-import { ChatChunk, ChatMessage, ToolCall } from "./types";
-import { global } from "./global";
+import { ChatChunk, ChatMessage, ChatRequest, MonitorChunk, Status, ToolCall } from "./types";
+import { globals } from "./globals";
 
 export class ChatResponse {
-    private controllers: ReadableStreamDefaultController<string>[] = [];
-    private last_chunk: ChatChunk | null = null;
+    private controllers: {
+        monitor: boolean;
+        initialized: boolean;
+        controller: ReadableStreamDefaultController<string>;
+    }[] = [];
+    private lastChunk: ChatChunk | null = null;
 
-    request: Record<string, unknown>;
+    request: ChatRequest;
     id: string;
     model: string;
-    status: 'thinking' | 'responding' | 'done';
+    status: Status;
     thinking: string;
     xmlThought: boolean = false;
     response: string;
@@ -16,7 +20,7 @@ export class ChatResponse {
     input: ReadableStream<Uint8Array>;
     done: Promise<void>;
     
-    constructor(request: Record<string, unknown>, input: ReadableStream<Uint8Array>) {
+    constructor(request: ChatRequest, input: ReadableStream<Uint8Array>) {
         this.request = request;
         this.id = crypto.randomUUID();
         this.model = '';
@@ -24,8 +28,7 @@ export class ChatResponse {
         this.thinking = '';
         this.response = '';
         this.input = input;
-        global.responses[this.id] = this;
-        global.recent_responses.unshift(this);
+        globals.addResponse(this);
         this.done = this.read();
     }
 
@@ -40,42 +43,58 @@ export class ChatResponse {
             } catch {
                 throw new Error("Error parsing chunk: " + chunk);
             }
-            const message = 'message' in json ? json.message : null;
-            if (!this.last_chunk) {
-                if (message && message.content == '<think>') {
+            const monitor: MonitorChunk = {
+                ...json,
+                status: this.status,
+            }
+            const message = json.message;
+            if (!this.lastChunk) {
+                console.log(this.request);
+                if (message.content == '<think>') {
                     this.xmlThought = true;
                     this.status = 'thinking';
                     message.content = '';
                 }
             }
-            if (message) {
-                if (message.tool_calls) {
-                    this.toolCalls.push(...message.tool_calls);
-                }
-                if (message.content == '</think>' && this.xmlThought) {
-                    this.xmlThought = false;
-                    this.status = 'responding';
-                    message.content = '';
-                }
-                if (this.xmlThought) {
-                    message.thinking = message.content;
-                    message.content = '';
-                }
+            if (message.tool_calls) {
+                this.toolCalls.push(...message.tool_calls);
             }
-            const newChunk = JSON.stringify(json) + '\n';
+            if (message.content == '</think>' && this.xmlThought) {
+                this.xmlThought = false;
+                this.status = 'responding';
+                message.content = '';
+            }
+            if (this.xmlThought) {
+                message.thinking = message.content;
+                message.content = '';
+            }
+            const newChunk = JSON.stringify({
+                ...json,
+            }) + '\n';
+            const monitorChunk = JSON.stringify(monitor) + '\n';
+            monitor.request = this.request;
+            const monitorChunkWithRequest = JSON.stringify(monitor) + '\n';
             for (const controller of this.controllers) {
                 try {
-                    controller.enqueue(newChunk);
+                    if (controller.monitor) {
+                        if (!controller.initialized) {
+                            controller.controller.enqueue(controller.initialized ? monitorChunk : monitorChunkWithRequest);
+                        }
+                        controller.controller.enqueue(monitorChunk);
+                    } else {
+                        controller.controller.enqueue(newChunk);
+                    }
+                    controller.initialized = true;
                 } catch (error) {
                     if (String(error).includes("Controller is already closed")) {
                         this.controllers.splice(this.controllers.indexOf(controller), 1);
                     } else {
                         console.error("Error enqueuing chunk: ", newChunk);
-                        controller.error(error);
+                        controller.controller.error(error);
                     }
                 }
             }
-            this.last_chunk = json;
+            this.lastChunk = json;
             if (json.done) {
                 this.status = 'done';
             } else if (message) {
@@ -102,18 +121,17 @@ export class ChatResponse {
             }
             this.status = 'done';
             for (const controller of this.controllers) {
-                controller.close();
+                controller.controller.close();
             }
         } catch (error) {
             console.error(error);
             for (const controller of this.controllers) {
-                controller.error(error);
+                controller.controller.error(error);
             }
         }
     }
 
     private headers(stream: boolean = true) {
-        console.log("Headers: ", stream);
         return {
             'Content-Type': stream ? 'application/x-ndjson' : 'application/json',
             Date: new Date().toUTCString(),
@@ -136,39 +154,51 @@ export class ChatResponse {
         return message;
     }
 
-    async respond(stream: boolean = true): Promise<Response> {
+    async respond(stream: boolean = true, monitor: boolean = false): Promise<Response> {
         if (!stream) {
             await this.done;
         }
         if (this.status === 'done') {
-            return Response.json({
-                request: this.request,
-                ...this.last_chunk,
+            if (!this.lastChunk) {
+                throw new Error("No last chunk");
+            }
+            const result: ChatChunk | MonitorChunk = monitor ? {
+                ...this.lastChunk,
                 message: this.message(),
-            }, {
+                status: this.status,
+                request: this.request,
+            } : {
+                ...this.lastChunk,
+                message: this.message(),
+            };
+            return Response.json(result, {
                 headers: this.headers(false),
             });
         }
-        return new Response(this.stream(), {
+        return new Response(this.stream(monitor), {
             headers: this.headers(),
         });
     }
 
-    stream() {
+    stream(monitor: boolean = false) {
         return new ReadableStream({
             start: (controller) => {
-                controller.enqueue(JSON.stringify({ request: this.request }) + '\n');
-                if (this.last_chunk) {
+                //controller.enqueue(JSON.stringify({ request: this.request }) + '\n');
+                if (this.lastChunk) {
                     controller.enqueue(JSON.stringify({
-                        ...this.last_chunk,
+                        ...this.lastChunk,
                         message: this.message(),
                     }) + '\n');
-                    if (this.last_chunk.done) {
+                    if (this.lastChunk.done) {
                         controller.close();
                         return;
                     }
                 }
-                this.controllers.push(controller);
+                this.controllers.push({
+                    monitor,
+                    initialized: false,
+                    controller,
+                });
             }
         });
     }

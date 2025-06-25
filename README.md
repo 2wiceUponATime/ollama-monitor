@@ -1,36 +1,126 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Ollama Monitor
 
-## Getting Started
+A real-time monitoring and debugging interface for Ollama chat requests. This Next.js application provides a web-based dashboard to monitor, inspect, and debug chat interactions with Ollama models.
 
-First, run the development server:
+## Features
 
+- **Real-time Monitoring**: Watch chat requests as they happen
+- **Request Inspection**: Expand and view full conversation details
+- **Streaming Support**: Real-time streaming of responses with thinking/processing states
+- **Tool Call Monitoring**: Track and display function/tool calls
+- **Memory Management**: Automatic cleanup of old requests to prevent memory leaks
+- **Auto-refresh**: Dashboard automatically updates every 30 seconds
+
+## Prerequisites
+
+- Node.js 18+ 
+- Ollama running locally on port 11434 (default)
+- Python 3.8+ (for test scripts)
+
+## Installation
+
+1. Clone the repository:
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+git clone <repository-url>
+cd ollama-monitor
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+2. Install dependencies:
+```bash
+npm install
+```
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+3. Start the development server:
+```bash
+npm run dev
+```
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+The application will be available at `http://localhost:11435`
 
-## Learn More
+## Usage
 
-To learn more about Next.js, take a look at the following resources:
+### Basic Monitoring
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+1. Start Ollama and ensure it's running on `http://localhost:11434`
+2. Open the monitor at `http://localhost:11435/monitor`
+3. Make chat requests to Ollama through the proxy endpoint: `http://localhost:11435/api/chat`
+4. Watch requests appear in real-time on the monitor dashboard
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+### API Endpoints
 
-## Deploy on Vercel
+- `GET /api/monitor/recent` - Get list of recent request IDs
+- `GET /api/monitor/request?id=<id>` - Get details of a specific request
+- `GET /api/monitor/chat?id=<id>` - Stream the full conversation
+- `POST /api/chat` - Proxy chat requests to Ollama with monitoring
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+### Testing
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+Use the included Python test script:
+
+```bash
+cd test
+pip install -r requirements.txt
+python main.py
+```
+
+## Configuration
+
+### Environment Variables
+
+- `OLLAMA_BASE_URL` - Ollama server URL (default: `http://localhost:11434`)
+- `PORT` - Monitor server port (default: `11435`)
+
+### Memory Management
+
+The application automatically manages memory by:
+- Limiting stored responses to 100 requests
+- Cleaning up completed requests older than 24 hours
+- Running cleanup every hour
+
+## Architecture
+
+### Key Components
+
+- **Global State Management** (`src/utils/global.ts`) - Centralized request storage with cleanup
+- **Chat Response Handler** (`src/utils/chat_response.ts`) - Stream processing and monitoring
+- **Monitor Dashboard** (`src/app/monitor/page.tsx`) - Web interface for viewing requests
+- **API Relay** (`src/utils/relay.ts`) - Proxy requests to Ollama
+
+### Data Flow
+
+1. Chat request → `/api/chat` → Ollama
+2. Response stream → `ChatResponse` class → Global storage
+3. Monitor dashboard → Global storage → Display
+
+## Development
+
+### Project Structure
+
+```
+src/
+├── app/
+│   ├── api/           # API routes
+│   ├── monitor/       # Monitor dashboard
+│   └── layout.tsx     # Root layout
+├── components/        # React components
+└── utils/            # Utility functions
+```
+
+### Available Scripts
+
+- `npm run dev` - Start development server
+- `npm run build` - Build for production
+- `npm run start` - Start production server
+- `npm run lint` - Run ESLint
+
+## Contributing
+
+1. Fork the repository
+2. Create a feature branch
+3. Make your changes
+4. Add tests if applicable
+5. Submit a pull request
+
+## License
+
+MIT License - see LICENSE file for details
