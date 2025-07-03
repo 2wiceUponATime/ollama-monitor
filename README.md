@@ -15,13 +15,12 @@ A real-time monitoring and debugging interface for Ollama chat requests. This Ne
 
 - Node.js 18+ 
 - Ollama running locally on port 11434 (default)
-- Python 3.8+ (for test scripts)
 
 ## Installation
 
 1. Clone the repository:
 ```bash
-git clone <repository-url>
+git clone https://github.com/2wiceUponATime/ollama-monitor.git
 cd ollama-monitor
 ```
 
@@ -51,17 +50,7 @@ The application will be available at `http://localhost:11435`
 - `GET /api/monitor/recent` - Get list of recent request IDs
 - `GET /api/monitor/request?id=<id>` - Get details of a specific request
 - `GET /api/monitor/chat?id=<id>` - Stream the full conversation
-- `POST /api/chat` - Proxy chat requests to Ollama with monitoring
-
-### Testing
-
-Use the included Python test script:
-
-```bash
-cd test
-pip install -r requirements.txt
-python main.py
-```
+- Other requests to `/api/...` or `/v1/...` - Relayed to Ollama (monitoring not supported by OpenAI-compatible endpoints yet)
 
 ## Configuration
 
@@ -112,15 +101,3 @@ src/
 - `npm run build` - Build for production
 - `npm run start` - Start production server
 - `npm run lint` - Run ESLint
-
-## Contributing
-
-1. Fork the repository
-2. Create a feature branch
-3. Make your changes
-4. Add tests if applicable
-5. Submit a pull request
-
-## License
-
-MIT License - see LICENSE file for details
